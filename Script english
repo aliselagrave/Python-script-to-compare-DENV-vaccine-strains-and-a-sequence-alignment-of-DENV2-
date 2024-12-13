@@ -1,0 +1,239 @@
+##########################  DESCRIPTION ###############################
+
+# This program allows identifying the protein substitutions of a set of strains
+# in comparison to a reference strain, and highlighting them in an Excel file.
+
+# The data containing the strains must be in a .fa (FASTA) file.
+
+###############  INSTALLATION OF MODULES #################
+
+#Install BioPython in the shell: pip install biopython
+#Install pandas in the shell: pip install pandas openpyxl
+#Install Jinja2 in the shell: pip install jinja2
+
+import pandas as pd
+import numpy as np
+from Bio import SeqIO
+from pandas.core.frame import dataclasses_to_dicts
+
+#BioPython library
+
+#### OPENING FASTA FILES ####
+
+Fasta_file = 'Dengvaxia_alignement_input.fasta'
+
+###########################  INITIALIZATION #########################
+
+#### REFERENCE STRAIN  ####
+
+ref_strain = list(SeqIO.parse(Fasta_file, "fasta"))[0]  # SeqRecord of the strain
+ref_strain_seq = ref_strain.seq  # reference nucleotide sequence
+ref_strain_AA = ref_strain_seq.translate()  # reference protein sequence
+
+REFERENCE = []  # reference sequence in the form of a list
+
+for index, letter in enumerate(ref_strain_AA):  # transforming the reference sequence into a list of nucleotides
+  codon_ref = ref_strain_seq[index * 3:index * 3 + 3]
+  REFERENCE.append(codon_ref + '     ' + letter)
+
+REFERENCE.append(' ')
+REFERENCE.append('NUMBER OF SUBSTITUTIONS')
+
+####  NUMBERING OF NUCLEOTIDES  ####
+
+NUM = []
+num = 1
+length = len(ref_strain_seq)
+
+while num <= length:
+  NUM.append(str(num) + '-' + str(num + 2))
+  num = num + 3
+
+NUM.append(' ')
+NUM.append(' ')
+
+####  CREATING DATA  ####
+
+data = {'REFERENCE': REFERENCE, 'POSITION IN AN': NUM}
+df = pd.DataFrame(data)  # creating dataframe
+
+############ SEQUENCE ANALYSIS #################
+
+####  IDENTIFICATION OF DIFFERENCES COMPARED TO THE REFERENCE STRAIN  ####
+
+for seq_record in SeqIO.parse(Fasta_file, "fasta"):  # extraction of each strain from the fasta file
+
+  i = 0  # Counting the number of substitutions for each strain
+
+  name = seq_record.id  # strain name
+  sequence_SUBSTITUTIONS = []  # list of substitutions
+
+  seq = seq_record.seq  # analyzed nucleotide sequence
+  seq_AA = seq.translate()  # corresponding protein sequence
+
+  for index, letter in enumerate(seq_AA):
+    if letter != ref_strain_AA[index]:  # identification of differences compared to the reference strain
+      i += 1
+      codon = seq[index * 3:index * 3 + 3]
+      sequence_SUBSTITUTIONS.append(codon + '    ' + letter)
+    else:
+      sequence_SUBSTITUTIONS.append(' ')
+
+  sequence_SUBSTITUTIONS.append(' ')
+  sequence_SUBSTITUTIONS.append(str(i))
+
+  df[name] = sequence_SUBSTITUTIONS  # adding the data to the dataframe
+
+####  SELECTING ONLY THE SUBSTITUTIONS IN THE DATA  ####
+
+# Removing rows containing only spaces in the codon cells
+df_filtered = df[~df.iloc[:, 2:].apply(lambda row: all(cell == ' ' for cell in row), axis=1)]
+
+####  COUNTING THE NUMBER OF SUBSTITUTIONS BY SECTION OF THE SEQUENCE  ####
+
+SECTIONS = [343, 840, 2319, 3375, 4029, 4419, 6276, 6657, 6726, 7470,
+            10140]  # position limits by section
+SECTION_NAMES = [
+    'AncC', 'prM', 'E', 'NS1', 'NS2A', 'NS2B', 'NS3', 'NS4A', '2K', 'NS4B',
+    'NS5'
+]  # names of the sections
+NUMBER_OF_SUBSTITUTIONS = []
+
+for a in range(len(SECTIONS)):
+  count = 0
+  for i in df_filtered.index:
+    b = 1 if (a - 1) < 0 else SECTIONS[a - 1]
+
+    if (i + 1) * 3 + 3 <= b:
+      continue
+    if (i + 1) * 3 + 3 <= SECTIONS[a]:
+      count += 1
+  NUMBER_OF_SUBSTITUTIONS.append(count)
+
+for name in SECTION_NAMES:
+  print('SUBSTITUTIONS', name, ' : ', NUMBER_OF_SUBSTITUTIONS[SECTION_NAMES.index(name)])
+
+print('Total SUBSTITUTIONS : ', sum(NUMBER_OF_SUBSTITUTIONS))
+
+##########################  CREATE EXCEL  ######################
+
+####  Function to color the cells  ####
+
+def highlight_SUBSTITUTIONS(val):
+  '''
+    Colors the cells based on the codon substitution.
+    '''
+  if val.endswith(' '):
+    return 'background-color: white'
+  elif val.endswith('A'):
+    return 'background-color: #FF0000'  # red
+  elif val.endswith('D'):
+    return 'background-color: #FFA500'  # orange
+  elif val.endswith('E'):
+    return 'background-color: #FFFF00'  # yellow
+  elif val.endswith('G'):
+    return 'background-color: #A52A2A'  # brown
+  elif val.endswith('H'):
+    return 'background-color: #FFD700'  # gold
+  elif val.endswith('I'):
+    return 'background-color: #ADD8E6'  # light blue
+  elif val.endswith('L'):
+    return 'background-color: #E6E6FA'  # lavender
+  elif val.endswith('M'):
+    return 'background-color: #0000FF'  # blue
+  elif val.endswith('N'):
+    return 'background-color: #00FF00'  # green
+  elif val.endswith('Q'):
+    return 'background-color: #D2691E'  # brown
+  elif val.endswith('S'):
+    return 'background-color: #00FFFF'  # cyan
+  elif val.endswith('T'):
+    return 'background-color: #FF69B4'  # pink
+  elif val.endswith('V'):
+    return 'background-color: #90EE90'  # light green
+  elif val.endswith('Y'):
+    return 'background-color: #8B0000'  # dark red
+  elif val.endswith('K'):
+    return 'background-color: #FFC0CB'  # light pink
+  elif val.endswith('P'):
+    return 'background-color: #FF1493'  # magenta
+  elif val.endswith('R'):
+    return 'background-color: #FF4500'  # dark orange
+  else:
+    return ''  # for other unspecified cases
+
+
+####  Formatting color style in the DataFrame  ####
+styled_df = df_filtered.style.map(highlight_SUBSTITUTIONS)
+
+####  Intermediate Excel Export   ####
+styled_df.to_excel('DENV2_PROT_FILTERED.xlsx', engine='openpyxl', index=False)
+
+#####  Verification of export  ####
+#print("The DataFrame has been successfully exported to the 'DENV2_PROT_FILTERED.xlsx' file")
+
+### Retrieving the index ### 
+Column_names = df_filtered.columns.values
+Column_names = np.insert(Column_names, 0, "AA POSITION")
+
+########## Numbering on coding sequence in AA/region ########
+# Load the Excel file
+file_path = 'DENV2_PROT_FILTERED.xlsx' 
+df = pd.read_excel(file_path)
+
+#### Transpose the DataFrame ####
+df_transpose = df.T 
+
+#### Change the positions to AA ####
+Position_AN = df_transpose.iloc[1].values
+Position_separated = []
+for element in Position_AN:
+  Position_separated.extend(element.split('-'))
+
+Position_separated.pop()
+Position_separated_num = [
+    float(element) if '.' in element else int(element)
+    for element in Position_separated
+]
+Position_AA = []
+for val in Position_separated_num:
+  new_values = (int(val) / 3) + 1
+  Position_AA.append(new_values)
+Position_AA_filtered = [
+  Position_AA[i] for i in range(len(Position_AA))
+    if i % 2 != 0
+]
+
+#### Retrieval of positions in the table for different regions ####
+start_position = next((index for index, value in enumerate(Position_AA_filtered) if value > 115), None)
+mid_position = next((index for index, value in enumerate(Position_AA_filtered) if value > 281), None)
+end_position = next((index for index, value in enumerate(Position_AA_filtered) if value > 775), None)
+number_of_columns = df_transpose.shape[1]
+
+#### Add a null value to match the size of the vectors/arrays ####
+Position_AA_filtered.append("")
+
+#### Add AA positions to the table and reverse rows to get them in the correct order ####
+new_row = pd.DataFrame([Position_AA_filtered], columns=df_transpose.columns)
+data = pd.concat([new_row, df_transpose], ignore_index=True)
+data.index = Column_names
+index_list = data.index.tolist()  # Convert index names to list
+index_list[1], index_list[2] = index_list[2], index_list[1]  # Swap the first two
+data.index = index_list  # Reassign the modified names to the DataFrame
+data.iloc[[1, 2]] = data.iloc[[2, 1]].values
+
+#### Save the Excel file with all regions ####
+data.to_excel('table_with_all_regions.xlsx', index=True)
+
+
+columns_to_keep = data.columns[start_position:(end_position)].tolist() + [data.columns[number_of_columns-1]]
+vector = ["prM"] * (mid_position-start_position) + ["Envelope"] * (end_position-mid_position) + ["Number of SUBSTITUTIONS"]
+
+cleaned_data = data[columns_to_keep]
+cleaned_data.columns = vector
+
+##### Adjust positions so that the start of the region matches the start of AA positions #### 
+cleaned_data.iloc[0, :mid_position-start_position] = cleaned_data.iloc[0, :mid_position-start_position] - 115
+cleaned_data.iloc[0, (mid_position-start_position):(end_position-start_position)] = cleaned_data.iloc[0, (mid_position-start_position):(end_position-start_position)] - 281
+
+cleaned_data.to_excel('table_with_prM_and_envelope.xlsx', index=True)
